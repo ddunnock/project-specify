@@ -1,3 +1,12 @@
+# Modified pyproject.toml for project-specify
+# Based on the original spec-kit structure which uses Typer
+#
+# Key changes from original:
+# 1. Package renamed to project-specify-cli
+# 2. Entry point renamed to project-specify
+# 3. Added force-include for agents/templates/scripts directories
+# 4. Added pyyaml for monorepo workspace parsing
+
 [project]
 name = "project-specify-cli"
 version = "0.0.1"
@@ -37,7 +46,7 @@ dependencies = [
     "platformdirs",             # Cross-platform directories
     "readchar",                 # Character input handling
     "truststore>=0.10.4",       # SSL/TLS certificate handling
-    "pyyaml>=6.0",              # For monorepo workspace parsing and MCP discovery
+    "pyyaml>=6.0",              # NEW: For monorepo workspace parsing
 ]
 
 [project.optional-dependencies]
@@ -81,11 +90,6 @@ include = [
     "src/specify_cli/templates/**/*.md",
     "src/specify_cli/scripts/**/*.sh",
     "src/specify_cli/scripts/**/*.ps1",
-]
-exclude = [
-    "**/__pycache__",
-    "**/*.pyc",
-    "**/.DS_Store",
 ]
 
 [tool.pytest.ini_options]

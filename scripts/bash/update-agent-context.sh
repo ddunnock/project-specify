@@ -1,9 +1,10 @@
 #!/usr/bin/env bash
 
-# Update agent context files with information from plan.md
+# Update agent context files with information from plan.md and MCP context
 #
 # This script maintains AI agent context files by parsing feature specifications 
 # and updating agent-specific configuration files with project information.
+# Also includes MCP server information from .specify/context/ if available.
 #
 # MAIN FUNCTIONS:
 # 1. Environment Validation
@@ -165,11 +166,33 @@ extract_plan_field() {
         grep -v "^N/A$" || echo ""
 }
 
+load_mcp_context() {
+    # Load MCP context if available
+    local repo_root=$(get_repo_root)
+    local context_file="$repo_root/.specify/context/project-context.json"
+    
+    if [[ -f "$context_file" ]]; then
+        # Extract technology info from MCP context
+        if command -v jq &> /dev/null; then
+            local mcp_lang=$(jq -r '.technology.primary_language // empty' "$context_file" 2>/dev/null)
+            local mcp_framework=$(jq -r '.technology.framework // empty' "$context_file" 2>/dev/null)
+            local mcp_db=$(jq -r '.technology.database // empty' "$context_file" 2>/dev/null)
+            
+            # Use MCP context if plan data is missing
+            [[ -z "$NEW_LANG" && -n "$mcp_lang" ]] && NEW_LANG="$mcp_lang"
+            [[ -z "$NEW_FRAMEWORK" && -n "$mcp_framework" ]] && NEW_FRAMEWORK="$mcp_framework"
+            [[ -z "$NEW_DB" && -n "$mcp_db" ]] && NEW_DB="$mcp_db"
+        fi
+    fi
+}
+
 parse_plan_data() {
     local plan_file="$1"
     
     if [[ ! -f "$plan_file" ]]; then
         log_error "Plan file not found: $plan_file"
+        # Try to load from MCP context as fallback
+        load_mcp_context
         return 1
     fi
     
