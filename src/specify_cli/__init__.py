@@ -33,7 +33,7 @@ import shutil
 import shlex
 import json
 from pathlib import Path
-from typing import Optional, Tuple
+from typing import Optional, Tuple, List
 
 import typer
 import httpx
@@ -942,10 +942,28 @@ def ensure_executable_scripts(project_path: Path, tracker: StepTracker | None = 
             for f in failures:
                 console.print(f"  - {f}")
 
+def parse_ai_callback(value: List[str]) -> List[str]:
+    """
+    Callback to parse --ai values, supporting multiple formats:
+    - Multiple flags: --ai claude --ai cursor
+    - Comma-separated: --ai claude,cursor,copilot
+    - All agents: --ai all
+    """
+    if not value:
+        return ["claude"]  # Default
+    from .symlink_manager import parse_ai_argument
+    return parse_ai_argument(value)
+
+
 @app.command()
 def init(
     project_name: str = typer.Argument(None, help="Name for your new project directory (optional if using --here, or use '.' for current directory)"),
-    ai_assistant: str = typer.Option(None, "--ai", help="AI assistant to use: claude, gemini, copilot, cursor-agent, qwen, opencode, codex, windsurf, kilocode, auggie, codebuddy, amp, shai, q, bob, or qoder "),
+    ai_assistant: List[str] = typer.Option(
+        None,
+        "--ai",
+        help="AI agents to set up. Use multiple times, 'all', or comma-separated.",
+        callback=parse_ai_callback,
+    ),
     script_type: str = typer.Option(None, "--script", help="Script type to use: sh or ps"),
     ignore_agent_tools: bool = typer.Option(False, "--ignore-agent-tools", help="Skip checks for AI agent tools like Claude Code"),
     no_git: bool = typer.Option(False, "--no-git", help="Skip git repository initialization"),
@@ -954,30 +972,30 @@ def init(
     skip_tls: bool = typer.Option(False, "--skip-tls", help="Skip SSL/TLS verification (not recommended)"),
     debug: bool = typer.Option(False, "--debug", help="Show verbose diagnostic output for network and extraction failures"),
     github_token: str = typer.Option(None, "--github-token", help="GitHub token to use for API requests (or set GH_TOKEN or GITHUB_TOKEN environment variable)"),
+    workspace: Optional[str] = typer.Option(None, "--workspace", help="Initialize in a specific workspace package (for monorepos)"),
+    no_mcp_discovery: bool = typer.Option(False, "--no-mcp-discovery", help="Skip MCP server discovery during initialization"),
 ):
     """
-    Initialize a new Specify project from the latest template.
+    Initialize a new project-specify project with symlinked commands.
     
     This command will:
     1. Check that required tools are installed (git is optional)
-    2. Let you choose your AI assistant
-    3. Download the appropriate template from GitHub
-    4. Extract the template to a new project directory or current directory
-    5. Initialize a fresh git repository (if not --no-git and no existing repo)
-    6. Optionally set up AI assistant commands
+    2. Let you choose your AI assistant(s) or use --ai all
+    3. Set up central installation at ~/.project-specify
+    4. Create symlinks to agent commands in project directory
+    5. Initialize .specify/ directory structure (project-specific)
+    6. Initialize a fresh git repository (if not --no-git and no existing repo)
     
     Examples:
-        specify init my-project
-        specify init my-project --ai claude
-        specify init my-project --ai copilot --no-git
-        specify init --ignore-agent-tools my-project
-        specify init . --ai claude         # Initialize in current directory
-        specify init .                     # Initialize in current directory (interactive AI selection)
-        specify init --here --ai claude    # Alternative syntax for current directory
-        specify init --here --ai codex
-        specify init --here --ai codebuddy
-        specify init --here
-        specify init --here --force  # Skip confirmation when current directory not empty
+        project-specify init my-project
+        project-specify init my-project --ai claude
+        project-specify init my-project --ai claude --ai cursor --ai copilot
+        project-specify init my-project --ai claude,cursor,copilot
+        project-specify init my-project --ai all
+        project-specify init . --ai all         # Initialize in current directory
+        project-specify init .                  # Initialize in current directory (interactive AI selection)
+        project-specify init --here --ai all    # Alternative syntax for current directory
+        project-specify init --here --force     # Skip confirmation when current directory not empty
     """
 
     show_banner()
@@ -994,9 +1012,32 @@ def init(
         console.print("[red]Error:[/red] Must specify either a project name, use '.' for current directory, or use --here flag")
         raise typer.Exit(1)
 
+    # Handle monorepo workspace detection
+    from .monorepo import detect_monorepo_type, get_workspace_packages
+    
+    monorepo_type = detect_monorepo_type(Path.cwd())
+    workspace_path = None
+    
+    if workspace:
+        if not monorepo_type:
+            console.print("[yellow]Warning:[/yellow] --workspace specified but no monorepo detected")
+        else:
+            packages = get_workspace_packages(Path.cwd(), monorepo_type)
+            # Find matching workspace
+            matching = [p for p in packages if workspace in str(p) or p.name == workspace]
+            if matching:
+                workspace_path = matching[0]
+                console.print(f"[cyan]Monorepo detected:[/cyan] {monorepo_type}")
+                console.print(f"[cyan]Workspace:[/cyan] {workspace_path}")
+            else:
+                console.print(f"[yellow]Warning:[/yellow] Workspace '{workspace}' not found in monorepo")
+
     if here:
         project_name = Path.cwd().name
-        project_path = Path.cwd()
+        if workspace_path:
+            project_path = workspace_path
+        else:
+            project_path = Path.cwd()
 
         existing_items = list(project_path.iterdir())
         if existing_items:
@@ -1010,8 +1051,11 @@ def init(
                     console.print("[yellow]Operation cancelled[/yellow]")
                     raise typer.Exit(0)
     else:
-        project_path = Path(project_name).resolve()
-        if project_path.exists():
+        if workspace_path:
+            project_path = workspace_path
+        else:
+            project_path = Path(project_name).resolve()
+        if project_path.exists() and not workspace_path:
             error_panel = Panel(
                 f"Directory '[cyan]{project_name}[/cyan]' already exists\n"
                 "Please choose a different project name or remove the existing directory.",
@@ -1043,53 +1087,65 @@ def init(
         if not should_init_git:
             console.print("[yellow]Git not found - will skip repository initialization[/yellow]")
 
+    # Parse agents list
     if ai_assistant:
-        if ai_assistant not in AGENT_CONFIG:
-            console.print(f"[red]Error:[/red] Invalid AI assistant '{ai_assistant}'. Choose from: {', '.join(AGENT_CONFIG.keys())}")
-            raise typer.Exit(1)
-        selected_ai = ai_assistant
+        # ai_assistant is already parsed by callback
+        selected_agents = ai_assistant
     else:
         # Create options dict for selection (agent_key: display_name)
         ai_choices = {key: config["name"] for key, config in AGENT_CONFIG.items()}
-        selected_ai = select_with_arrows(
+        selected_key = select_with_arrows(
             ai_choices, 
             "Choose your AI assistant:", 
             "copilot"
         )
+        selected_agents = [selected_key]
 
+    # Validate all agents
+    invalid_agents = [a for a in selected_agents if a not in AGENT_CONFIG]
+    if invalid_agents:
+        console.print(f"[red]Error:[/red] Invalid AI assistant(s): {', '.join(invalid_agents)}. Choose from: {', '.join(AGENT_CONFIG.keys())}")
+        raise typer.Exit(1)
+
+    # Check CLI tools for agents that require them
     if not ignore_agent_tools:
-        agent_config = AGENT_CONFIG.get(selected_ai)
-        if agent_config and agent_config["requires_cli"]:
-            install_url = agent_config["install_url"]
-            if not check_tool(selected_ai):
-                error_panel = Panel(
-                    f"[cyan]{selected_ai}[/cyan] not found\n"
-                    f"Install from: [cyan]{install_url}[/cyan]\n"
-                    f"{agent_config['name']} is required to continue with this project type.\n\n"
-                    "Tip: Use [cyan]--ignore-agent-tools[/cyan] to skip this check",
-                    title="[red]Agent Detection Error[/red]",
-                    border_style="red",
-                    padding=(1, 2)
-                )
-                console.print()
-                console.print(error_panel)
-                raise typer.Exit(1)
+        missing_tools = []
+        for agent_key in selected_agents:
+            agent_config = AGENT_CONFIG.get(agent_key)
+            if agent_config and agent_config["requires_cli"]:
+                install_url = agent_config["install_url"]
+                if not check_tool(agent_key):
+                    missing_tools.append((agent_key, agent_config["name"], install_url))
+        
+        if missing_tools:
+            error_lines = []
+            for agent_key, agent_name, install_url in missing_tools:
+                error_lines.append(f"[cyan]{agent_key}[/cyan] ({agent_name}) not found")
+                error_lines.append(f"  Install from: [cyan]{install_url}[/cyan]")
+                error_lines.append("")
+            
+            error_lines.append("Tip: Use [cyan]--ignore-agent-tools[/cyan] to skip this check")
+            
+            error_panel = Panel(
+                "\n".join(error_lines),
+                title="[red]Agent Detection Error[/red]",
+                border_style="red",
+                padding=(1, 2)
+            )
+            console.print()
+            console.print(error_panel)
+            raise typer.Exit(1)
 
+    # Script type is no longer needed for symlink architecture
+    # Keep for backward compatibility but don't use it
     if script_type:
         if script_type not in SCRIPT_TYPE_CHOICES:
-            console.print(f"[red]Error:[/red] Invalid script type '{script_type}'. Choose from: {', '.join(SCRIPT_TYPE_CHOICES.keys())}")
-            raise typer.Exit(1)
-        selected_script = script_type
+            console.print(f"[yellow]Warning:[/yellow] Script type '{script_type}' ignored (not used with symlink architecture)")
+    
+    if len(selected_agents) == 1:
+        console.print(f"[cyan]Selected AI assistant:[/cyan] {selected_agents[0]}")
     else:
-        default_script = "ps" if os.name == "nt" else "sh"
-
-        if sys.stdin.isatty():
-            selected_script = select_with_arrows(SCRIPT_TYPE_CHOICES, "Choose script type (or press Enter)", default_script)
-        else:
-            selected_script = default_script
-
-    console.print(f"[cyan]Selected AI assistant:[/cyan] {selected_ai}")
-    console.print(f"[cyan]Selected script type:[/cyan] {selected_script}")
+        console.print(f"[cyan]Selected AI assistants:[/cyan] {', '.join(selected_agents)}")
 
     tracker = StepTracker("Initialize Specify Project")
 
@@ -1097,18 +1153,16 @@ def init(
 
     tracker.add("precheck", "Check required tools")
     tracker.complete("precheck", "ok")
-    tracker.add("ai-select", "Select AI assistant")
-    tracker.complete("ai-select", f"{selected_ai}")
-    tracker.add("script-select", "Select script type")
-    tracker.complete("script-select", selected_script)
+    tracker.add("ai-select", "Select AI assistant(s)")
+    if len(selected_agents) == 1:
+        tracker.complete("ai-select", f"{selected_agents[0]}")
+    else:
+        tracker.complete("ai-select", f"{len(selected_agents)} agents")
     for key, label in [
-        ("fetch", "Fetch latest release"),
-        ("download", "Download template"),
-        ("extract", "Extract template"),
-        ("zip-list", "Archive contents"),
-        ("extracted-summary", "Extraction summary"),
+        ("central-install", "Set up central installation"),
+        ("symlinks", "Create agent symlinks"),
+        ("specify-dir", "Create .specify directory"),
         ("chmod", "Ensure scripts executable"),
-        ("cleanup", "Cleanup"),
         ("git", "Initialize git repository"),
         ("final", "Finalize")
     ]:
@@ -1120,12 +1174,70 @@ def init(
     with Live(tracker.render(), console=console, refresh_per_second=8, transient=True) as live:
         tracker.attach_refresh(lambda: live.update(tracker.render()))
         try:
-            verify = not skip_tls
-            local_ssl_context = ssl_context if verify else False
-            local_client = httpx.Client(verify=local_ssl_context)
-
-            download_and_extract_template(project_path, selected_ai, selected_script, here, verbose=False, tracker=tracker, client=local_client, debug=debug, github_token=github_token)
-
+            # Import symlink manager
+            from .symlink_manager import (
+                ensure_central_installation,
+                create_agent_symlinks,
+            )
+            
+            # Set up central installation
+            tracker.start("central-install")
+            ensure_central_installation(force_update=False)
+            tracker.complete("central-install", "~/.project-specify ready")
+            
+            # Create agent symlinks
+            tracker.start("symlinks")
+            symlink_results = create_agent_symlinks(
+                project_path,
+                selected_agents,
+                force=force,
+                verbose=False
+            )
+            successful = [agent for agent, success in symlink_results.items() if success]
+            failed = [agent for agent, success in symlink_results.items() if not success]
+            if failed:
+                tracker.error("symlinks", f"{len(successful)}/{len(selected_agents)} created")
+            else:
+                tracker.complete("symlinks", f"{len(successful)} agent(s) linked")
+            
+            # Create .specify directory structure (project-specific, not symlinked)
+            tracker.start("specify-dir")
+            specify_dir = project_path / ".specify"
+            specify_dir.mkdir(exist_ok=True)
+            
+            # Create subdirectories
+            (specify_dir / "memory").mkdir(exist_ok=True)
+            (specify_dir / "specs").mkdir(exist_ok=True)
+            (specify_dir / "scripts").mkdir(exist_ok=True)
+            (specify_dir / "templates").mkdir(exist_ok=True)
+            (specify_dir / "context").mkdir(exist_ok=True)
+            
+            # Copy scripts from package (these are project-specific)
+            # TODO: In Phase 2, we'll copy scripts from package resources
+            # For now, just create the structure
+            
+            tracker.complete("specify-dir", "project structure created")
+            
+            # MCP discovery (optional)
+            if not no_mcp_discovery:
+                try:
+                    from .mcp_discovery import (
+                        discover_mcp_servers,
+                        detect_project_technology,
+                        generate_mcp_context,
+                    )
+                    
+                    tracker.add("mcp-discovery", "Discover MCP servers")
+                    tracker.start("mcp-discovery")
+                    
+                    servers = discover_mcp_servers(project_path)
+                    tech = detect_project_technology(project_path)
+                    generate_mcp_context(project_path, servers, tech)
+                    
+                    tracker.complete("mcp-discovery", f"{len(servers)} server(s) found")
+                except Exception as e:
+                    tracker.skip("mcp-discovery", f"skipped: {e}")
+            
             ensure_executable_scripts(project_path, tracker=tracker)
 
             if not no_git:
@@ -1184,12 +1296,17 @@ def init(
         console.print(git_error_panel)
 
     # Agent folder security notice
-    agent_config = AGENT_CONFIG.get(selected_ai)
-    if agent_config:
-        agent_folder = agent_config["folder"]
+    agent_folders = set()
+    for agent_key in selected_agents:
+        agent_config = AGENT_CONFIG.get(agent_key)
+        if agent_config:
+            agent_folders.add(agent_config["folder"])
+    
+    if agent_folders:
+        folders_list = ", ".join([f"[cyan]{f}[/cyan]" for f in sorted(agent_folders)])
         security_notice = Panel(
             f"Some agents may store credentials, auth tokens, or other identifying and private artifacts in the agent folder within your project.\n"
-            f"Consider adding [cyan]{agent_folder}[/cyan] (or parts of it) to [cyan].gitignore[/cyan] to prevent accidental credential leakage.",
+            f"Consider adding {folders_list} (or parts of them) to [cyan].gitignore[/cyan] to prevent accidental credential leakage.",
             title="[yellow]Agent Folder Security[/yellow]",
             border_style="yellow",
             padding=(1, 2)
@@ -1206,7 +1323,7 @@ def init(
         step_num = 2
 
     # Add Codex-specific setup step if needed
-    if selected_ai == "codex":
+    if "codex" in selected_agents:
         codex_path = project_path / ".codex"
         quoted_path = shlex.quote(str(codex_path))
         if os.name == "nt":  # Windows
@@ -1239,6 +1356,49 @@ def init(
     enhancements_panel = Panel("\n".join(enhancement_lines), title="Enhancement Commands", border_style="cyan", padding=(1,2))
     console.print()
     console.print(enhancements_panel)
+
+@app.command()
+def discover(
+    project_path: Optional[Path] = typer.Argument(None, help="Project directory (default: current directory)"),
+    skip_mcp: bool = typer.Option(False, "--skip-mcp", help="Skip MCP server discovery"),
+):
+    """Discover MCP servers and generate project context."""
+    from .mcp_discovery import (
+        discover_mcp_servers,
+        detect_project_technology,
+        generate_mcp_context,
+    )
+    
+    if project_path is None:
+        project_path = Path.cwd()
+    else:
+        project_path = Path(project_path).resolve()
+    
+    console.print("[cyan]Discovering MCP servers and project context...[/cyan]")
+    
+    if not skip_mcp:
+        servers = discover_mcp_servers(project_path)
+        console.print(f"[green]Found {len(servers)} MCP server(s)[/green]")
+        for server in servers:
+            console.print(f"  • {server.name} ({server.source})")
+    else:
+        servers = []
+    
+    tech = detect_project_technology(project_path)
+    console.print(f"\n[cyan]Project Technology:[/cyan]")
+    console.print(f"  Language: {tech.primary_language}")
+    if tech.framework:
+        console.print(f"  Framework: {tech.framework}")
+    if tech.package_manager:
+        console.print(f"  Package Manager: {tech.package_manager}")
+    if tech.database:
+        console.print(f"  Database: {tech.database}")
+    if tech.monorepo_type:
+        console.print(f"  Monorepo: {tech.monorepo_type}")
+    
+    generate_mcp_context(project_path, servers, tech)
+    console.print(f"\n[green]Context files generated in .specify/context/[/green]")
+
 
 @app.command()
 def check():
