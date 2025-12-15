@@ -53,7 +53,7 @@ dev = [
 
 [project.scripts]
 # CHANGED: New entry point name
-project-specify = "specify_cli.main:main"
+project-specify = "specify_cli:main"
 
 [project.urls]
 Homepage = "https://github.com/YOUR_USERNAME/project-specify"

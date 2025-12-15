@@ -68,6 +68,72 @@ Follow this execution flow:
    - Any files flagged for manual follow-up.
    - Suggested commit message (e.g., `docs: amend constitution to vX.Y.Z (principle additions + governance update)`).
 
+## Next Steps: Preparing for Research Phase
+
+After the constitution is established, you can optionally prepare for the `/speckit.research` phase by filling out research seed templates.
+
+### Research Seed Templates Available
+
+Optional seed file templates are provided to help guide comprehensive project research:
+**Location:** `templates/research-seeds/`
+
+**Categories Available:**
+
+**Technical Research:**
+- `technical/data-research.seed.md` - Data entities, relationships, storage requirements
+- `technical/architecture-research.seed.md` - System architecture, components, integration
+- `technical/tech-stack-research.seed.md` - Technologies, frameworks, infrastructure, tools
+
+**Domain Research:**
+- `domain/domain-research.seed.md` - Business domain, industry context, core concepts
+- `domain/business-rules-research.seed.md` - Business rules, validation logic, calculations
+- `domain/workflow-research.seed.md` - Business processes, workflows, decision points
+
+**User Research:**
+- `user/user-research.seed.md` - User needs, pain points, goals, context
+- `user/personas-research.seed.md` - User roles, characteristics, motivations
+- `user/journey-maps-research.seed.md` - User journeys, touchpoints, emotions
+
+**Constraints Research:**
+- `constraints/compliance-research.seed.md` - Regulatory requirements, audit needs
+- `constraints/security-research.seed.md` - Security requirements, threat model
+- `constraints/performance-research.seed.md` - Performance targets, scalability, SLAs
+
+### How to Use Seed Templates
+
+1. **Copy templates to your project** (optional):
+   ```bash
+   mkdir -p .specify/research-seeds/{technical,domain,user,constraints}
+   cp templates/research-seeds/technical/*.seed.md .specify/research-seeds/technical/
+   cp templates/research-seeds/domain/*.seed.md .specify/research-seeds/domain/
+   cp templates/research-seeds/user/*.seed.md .specify/research-seeds/user/
+   cp templates/research-seeds/constraints/*.seed.md .specify/research-seeds/constraints/
+   ```
+
+2. **Fill out relevant seed files** using a text editor:
+   - Answer the prompting questions in each template
+   - Fill in sections that are relevant to your project
+   - Leave sections blank if not applicable or to be determined later
+
+3. **Run `/speckit.research`**:
+   - The AI will read your seed files
+   - Ask clarifying questions for any gaps
+   - Generate comprehensive research documents in `.specify/research/`
+
+**Seed files are completely optional** - if you don't provide them, the AI will guide you through research interactively by asking questions. However, seed files allow you to prepare your thinking in advance and provide more structured input.
+
+### Recommended Workflow
+
+After completing the constitution:
+1. **(Optional)** Fill out research seed templates that are relevant to your project
+2. Run `/speckit.research` to conduct foundational project research
+3. Run `/speckit.specify` to create project-level PRD (references research)
+4. Run `/speckit.plan` to create technical implementation plan
+5. Run `/speckit.tasks` to generate detailed task breakdown
+6. Run `/speckit.implement` to begin execution
+
+The research phase establishes a solid foundation of project understanding across technical, domain, user, and constraint dimensions that will inform all subsequent planning and implementation.
+
 Formatting & Style Requirements:
 
 - Use Markdown headings exactly as in the template (do not demote/promote levels).

@@ -23,6 +23,393 @@ You **MUST** consider the user input before proceeding (if not empty).
 
 ## Outline
 
+This command supports two modes based on project structure:
+
+- **Project Mode**: Creates a single project-level PRD (`.specify/spec.md`) that references research documents
+- **Feature Mode**: Creates feature-specific specs (`.specify/specs/###-feature-name/spec.md`) - backward compatible
+
+### Step 0: Detect Project Mode
+
+Before proceeding, detect which mode to use:
+
+```bash
+bash scripts/bash/detect-project-mode.sh
+```
+
+**Mode Detection Logic:**
+- If `.specify/research/README.md` exists OR `.specify/spec.md` exists → **Project Mode**
+- If `.specify/specs/` exists with numbered feature directories → **Feature Mode**
+- If neither exists → **Unknown** (default to Feature Mode or ask user)
+
+**Based on detected mode:**
+- **Project Mode** → Follow **Project Mode Workflow** (below)
+- **Feature Mode** → Follow **Feature Mode Workflow** (original behavior)
+
+---
+
+## Project Mode Workflow
+
+> **When to use**: After `/speckit.research` has generated foundational research documents
+> **Output**: Single `.specify/spec.md` (PRD-style specification)
+> **References**: Extensively links to `.specify/research/**/*.md` documents
+
+### Purpose
+
+Create a comprehensive Product Requirements Document (PRD) that serves as the single source of truth for the entire project, with features organized as chapters and all requirements validated against research documents.
+
+### Execution Flow
+
+#### 1. Load Research Foundation
+
+Read all research documents to understand project context:
+
+```bash
+# Check research index
+cat .specify/research/README.md
+
+# Load research by category
+ls -la .specify/research/technical/*.md
+ls -la .specify/research/domain/*.md
+ls -la .specify/research/user/*.md
+ls -la .specify/research/constraints/*.md
+```
+
+**Research Documents to Load:**
+
+**Technical Research:**
+- `.specify/research/technical/data-research.md` - Data entities, relationships, storage
+- `.specify/research/technical/architecture-research.md` - System architecture, components
+- `.specify/research/technical/tech-stack-research.md` - Technology choices, frameworks
+
+**Domain Research:**
+- `.specify/research/domain/domain-research.md` - Business domain, core concepts
+- `.specify/research/domain/business-rules-research.md` - Business rules, validation logic
+- `.specify/research/domain/workflow-research.md` - Business processes, workflows
+
+**User Research:**
+- `.specify/research/user/user-research.md` - User needs, pain points, goals
+- `.specify/research/user/personas-research.md` - User roles, characteristics
+- `.specify/research/user/journey-maps-research.md` - User journeys, touchpoints
+
+**Constraints Research:**
+- `.specify/research/constraints/compliance-research.md` - Regulatory requirements
+- `.specify/research/constraints/security-research.md` - Security requirements
+- `.specify/research/constraints/performance-research.md` - Performance targets, scalability
+
+#### 2. Load PRD Template
+
+Load the project specification template:
+
+```bash
+cat templates/project-spec-template.md
+```
+
+This template provides the structure for the project-level PRD with extensive research references.
+
+#### 3. Extract User Input
+
+Parse the user's specification request:
+- If user provided specific features to add: Use those as starting features in the PRD
+- If this is initial PRD creation: Generate comprehensive feature set based on research
+- If updating existing PRD: Load `.specify/spec.md` and update specific sections
+
+#### 4. Generate Executive Summary
+
+Based on research documents, create:
+
+**Vision Statement:**
+- Extract from `.specify/research/user/user-research.md` - user goals and needs
+- Synthesize with `.specify/research/domain/domain-research.md` - business domain context
+
+**Business Objectives:**
+- Reference `.specify/research/domain/workflow-research.md` - business processes
+- Align with `.specify/memory/constitution.md` - project principles
+
+**Target Users:**
+- Summarize from `.specify/research/user/personas-research.md`
+- Link to detailed persona research
+
+**Success Criteria:**
+- Extract from `.specify/research/user/user-research.md` - user success metrics
+- Add performance targets from `.specify/research/constraints/performance-research.md`
+
+#### 5. Document Research Foundation
+
+Create "Research Foundation" section linking to all research documents:
+
+```markdown
+## Research Foundation
+
+This specification is informed by comprehensive research across four dimensions:
+
+### Technical Research
+**Location:** `.specify/research/technical/`
+
+- **[Data Research](./research/technical/data-research.md)** - [Brief summary from doc]
+- **[Architecture Research](./research/technical/architecture-research.md)** - [Brief summary from doc]
+- **[Tech Stack Research](./research/technical/tech-stack-research.md)** - [Brief summary from doc]
+
+**Key Findings:**
+[Extract 3-5 key technical decisions from research documents]
+
+### Domain Research
+**Location:** `.specify/research/domain/`
+[Same pattern...]
+
+### User Research
+**Location:** `.specify/research/user/`
+[Same pattern...]
+
+### Constraints Research
+**Location:** `.specify/research/constraints/`
+[Same pattern...]
+```
+
+#### 6. Generate Functional Requirements
+
+For each feature (provided by user or inferred from research):
+
+```markdown
+### Feature N: [Feature Name]
+
+**Priority:** P1 (MVP) | P2 (Enhancement) | P3 (Future)
+
+**Research References:**
+- **Domain:** [Workflow Research](.specify/research/domain/workflow-research.md#section-name) - [Specific section]
+- **User:** [User Research](.specify/research/user/user-research.md#need-reference) - [User need this addresses]
+- **Technical:** [Architecture Research](.specify/research/technical/architecture-research.md#component-name) - [Architecture component]
+
+**Description:**
+[Feature description based on user input and research]
+
+**User Stories:**
+
+#### Story N.1: [Story Title]
+**As a** [persona from personas-research.md],
+**I want** [goal],
+**So that** [benefit from user-research.md].
+
+**Acceptance Criteria:**
+- [ ] [Criterion 1 - reference business-rules-research.md if applicable]
+- [ ] [Criterion 2]
+- [ ] [Criterion 3]
+
+**Validation Check:**
+- **Business Rule:** [Business Rules Research](.specify/research/domain/business-rules-research.md#rule-id) - [Specific rule to validate against]
+- **User Journey:** [Journey Maps Research](.specify/research/user/journey-maps-research.md#journey-id) - [Journey step this addresses]
+
+**Dependencies:**
+- [Dependencies from architecture-research.md]
+
+**Assumptions:**
+- [Assumptions - note any not covered in research]
+```
+
+**Important**:
+- Every feature MUST reference at least one research document
+- Acceptance criteria MUST link to business rules research when validation logic exists
+- User stories MUST reference specific personas from personas-research.md
+- Technical requirements MUST align with architecture-research.md decisions
+
+#### 7. Generate Non-Functional Requirements
+
+Extract from constraints research:
+
+```markdown
+## Non-Functional Requirements
+
+> **Reference:** [Constraints Research](.specify/research/constraints/)
+
+### Performance Requirements
+**Source:** [Performance Research](.specify/research/constraints/performance-research.md)
+
+[Table of performance targets from research]
+
+### Security Requirements
+**Source:** [Security Research](.specify/research/constraints/security-research.md)
+
+- **Authentication:** [From security-research.md]
+- **Authorization:** [From security-research.md]
+- **Data Protection:** [From security-research.md]
+- **Compliance:** See [Compliance Research](.specify/research/constraints/compliance-research.md)
+
+### Scalability Requirements
+**Source:** [Performance Research](.specify/research/constraints/performance-research.md#scalability)
+
+[Scalability targets from research]
+
+### Compliance Requirements
+**Source:** [Compliance Research](.specify/research/constraints/compliance-research.md)
+
+- **Regulations:** [From compliance-research.md]
+- **Certifications:** [From compliance-research.md]
+- **Audit Requirements:** [From compliance-research.md]
+```
+
+#### 8. Generate Technical Architecture Section
+
+Summarize from architecture research:
+
+```markdown
+## Technical Architecture
+
+> **Reference:** [Architecture Research](.specify/research/technical/architecture-research.md)
+
+### High-Level Architecture
+
+[Architecture diagram or description from architecture-research.md]
+
+**Key Components:**
+[List components from architecture-research.md]
+
+**For detailed component design, see:** [Architecture Research](.specify/research/technical/architecture-research.md)
+
+### Technology Stack
+
+> **Reference:** [Tech Stack Research](.specify/research/technical/tech-stack-research.md)
+
+[Table of technologies from tech-stack-research.md]
+
+**For detailed technology decisions, see:** [Tech Stack Research](.specify/research/technical/tech-stack-research.md)
+```
+
+#### 9. Generate Data Model Section
+
+Summarize from data research:
+
+```markdown
+## Data Model
+
+> **Reference:** [Data Research](.specify/research/technical/data-research.md)
+
+### Key Entities
+
+[Entity summary from data-research.md]
+
+**For complete entity relationships and data dictionary, see:** [Data Research](.specify/research/technical/data-research.md)
+```
+
+#### 10. Validate Against Research
+
+Check that the PRD aligns with research:
+
+1. **Cross-reference check:**
+   - Do all features reference relevant research documents?
+   - Are business rules from business-rules-research.md reflected in acceptance criteria?
+   - Do personas match personas-research.md?
+   - Do tech choices align with tech-stack-research.md recommendations?
+
+2. **Consistency check:**
+   - Are there conflicts between spec requirements and research recommendations?
+   - Flag any spec decisions that contradict research findings
+
+3. **Completeness check:**
+   - Are there critical research findings not reflected in the spec?
+   - Are there features in the spec that lack research foundation?
+
+**Output validation report:**
+```
+PRD Validation Report:
+
+✓ All features reference research documents
+✓ Business rules aligned with business-rules-research.md
+⚠ Warning: Feature X proposes technology not in tech-stack-research.md
+⚠ Warning: No feature addresses user need Y from user-research.md
+
+Recommend: Review warnings before proceeding to planning phase.
+```
+
+#### 11. Write PRD to .specify/spec.md
+
+Apply the `templates/project-spec-template.md` with all generated content and research references.
+
+Write the complete PRD to:
+```
+.specify/spec.md
+```
+
+#### 12. Create PRD Quality Checklist
+
+Generate validation checklist at `.specify/checklists/prd-quality.md`:
+
+```markdown
+# PRD Quality Checklist
+
+**Purpose**: Validate PRD completeness and research alignment
+**Created**: [DATE]
+**PRD**: [Link to .specify/spec.md]
+
+## Research Alignment
+
+- [ ] All features reference at least one research document
+- [ ] Business rules match business-rules-research.md
+- [ ] Personas match personas-research.md
+- [ ] Architecture aligns with architecture-research.md
+- [ ] Tech stack matches tech-stack-research.md recommendations
+- [ ] NFRs sourced from constraints research
+
+## Content Quality
+
+- [ ] Executive summary is clear and compelling
+- [ ] Vision statement aligns with user research
+- [ ] Success criteria are measurable and technology-agnostic
+- [ ] All mandatory sections completed
+- [ ] Research references are specific (link to sections, not just documents)
+
+## Feature Completeness
+
+- [ ] Each feature has clear acceptance criteria
+- [ ] User stories reference specific personas
+- [ ] Validation checks link to business rules
+- [ ] Dependencies identified from research
+- [ ] Priorities assigned (P1/P2/P3)
+
+## Validation
+
+- [ ] No conflicts between spec and research
+- [ ] All critical research findings reflected in spec
+- [ ] No unvalidated assumptions (all should be in research)
+
+## Notes
+
+[Document any issues or warnings from validation]
+```
+
+#### 13. Report Completion
+
+Output summary:
+```
+Project PRD Created!
+
+Location: .specify/spec.md
+Template: templates/project-spec-template.md
+
+Research Documents Referenced:
+- Technical: 3 documents
+- Domain: 3 documents
+- User: 3 documents
+- Constraints: 3 documents
+
+Features Specified: N features (P1: X, P2: Y, P3: Z)
+
+Validation: [Pass/Warnings]
+- [List any validation warnings]
+
+Quality Checklist: .specify/checklists/prd-quality.md
+
+Next Steps:
+1. Review PRD and validation warnings
+2. Run /speckit.plan to create technical implementation plan
+3. Plan will reference research documents for technical decisions
+```
+
+---
+
+## Feature Mode Workflow
+
+> **When to use**: Legacy feature-centric workflow (backward compatible)
+> **Output**: `.specify/specs/###-feature-name/spec.md`
+
 The text the user typed after `/speckit.specify` in the triggering message **is** the feature description. Assume you always have it available in this conversation even if `{ARGS}` appears literally below. Do not ask the user to repeat it unless they provided an empty command.
 
 Given that feature description, do this:
