@@ -1,0 +1,13 @@
+{
+  "mcp_servers": [],
+  "technology": {
+    "primary_language": "python",
+    "framework": null,
+    "package_manager": "pip",
+    "database": null,
+    "monorepo_type": null,
+    "detected_services": [
+      "github-actions"
+    ]
+  }
+}

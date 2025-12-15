@@ -1,0 +1,29 @@
+{
+  "mcpServers": {
+    "github": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "@modelcontextprotocol/server-github"
+      ],
+      "env": {
+        "GITHUB_TOKEN": "${GITHUB_TOKEN}",
+        "GITHUB_API_URL": "${GITHUB_API_URL:-https://api.github.com}"
+      }
+    },
+    "database": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "@modelcontextprotocol/server-postgres"
+      ],
+      "env": {
+        "DB_HOST": "${DB_HOST}",
+        "DB_PORT": "${DB_PORT:-5432}",
+        "DB_NAME": "${DB_NAME}",
+        "DB_USER": "${DB_USER}",
+        "DB_PASSWORD": "${DB_PASSWORD}"
+      }
+    }
+  }
+}

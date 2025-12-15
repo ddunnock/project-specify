@@ -53,8 +53,8 @@ def _get_agent_symlink_config(agent_key: str) -> dict:
     Maps agent keys to source/target paths for symlink creation.
     Handles special cases like copilot (file-based) and cursor-agent (key mismatch).
     """
-    # Lazy import to avoid circular dependency
-    from . import AGENT_CONFIG
+    # Import from config module
+    from .config import AGENT_CONFIG
     
     if agent_key not in AGENT_CONFIG:
         raise ValueError(f"Unknown agent: {agent_key}")
@@ -97,8 +97,8 @@ def _get_agent_symlink_config(agent_key: str) -> dict:
 
 def get_supported_agents() -> list[str]:
     """Get list of all supported agent keys."""
-    # Lazy import to avoid circular dependency
-    from . import AGENT_CONFIG
+    # Import from config module
+    from .config import AGENT_CONFIG
     return list(AGENT_CONFIG.keys())
 
 
@@ -161,32 +161,197 @@ def parse_ai_argument(ai_args: str | list[str]) -> list[str]:
     return agents
 
 
+def _has_windows_symlink_capability() -> bool:
+    """
+    Check if the current Windows system can create symlinks.
+
+    Returns:
+        True if symlinks can be created, False otherwise
+    """
+    if platform.system() != "Windows":
+        return True  # Non-Windows systems support symlinks
+
+    # Test by trying to create a temporary symlink
+    import tempfile
+    try:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            test_src = Path(tmpdir) / "test_src"
+            test_src.mkdir()
+            test_link = Path(tmpdir) / "test_link"
+            test_link.symlink_to(test_src, target_is_directory=True)
+            test_link.unlink()
+            return True
+    except (OSError, NotImplementedError):
+        return False
+
+
+def _copy_agent_commands(
+    project_dir: Path,
+    agents: list[str],
+    force: bool = False,
+    verbose: bool = True,
+) -> dict[str, bool]:
+    """
+    Copy agent commands to project directory (fallback when symlinks not available).
+
+    This creates actual copies of command files instead of symlinks.
+    Note: Copies use more disk space and won't auto-update when the central
+    installation is updated.
+
+    Args:
+        project_dir: The project directory to set up
+        agents: List of agent names to copy commands for
+        force: If True, overwrite existing files
+        verbose: If True, print status messages
+
+    Returns:
+        Dict mapping agent name to success status
+    """
+    results = {}
+
+    for agent in agents:
+        try:
+            config = _get_agent_symlink_config(agent)
+        except ValueError:
+            if verbose:
+                print(f"  ⚠️  Unknown agent: {agent}")
+            results[agent] = False
+            continue
+
+        source = AGENTS_DIR / config["source"]
+        target = project_dir / config["target"]
+
+        if not source.exists():
+            if verbose:
+                print(f"  ⚠️  Source not found for {agent}: {source}")
+            results[agent] = False
+            continue
+
+        # Handle file-specific copies vs directory copies
+        if "files" in config:
+            # Copy specific files
+            target.mkdir(parents=True, exist_ok=True)
+            all_success = True
+            for filename in config["files"]:
+                src_file = source / filename
+                tgt_file = target / filename
+                if src_file.exists():
+                    success = _copy_file(src_file, tgt_file, force, verbose)
+                    all_success = all_success and success
+                else:
+                    if verbose:
+                        print(f"  ⚠️  Source file not found: {src_file}")
+                    all_success = False
+            results[agent] = all_success
+        else:
+            # Copy entire directory
+            target.parent.mkdir(parents=True, exist_ok=True)
+            results[agent] = _copy_directory(source, target, force, verbose)
+
+    return results
+
+
+def _copy_file(source: Path, target: Path, force: bool, verbose: bool) -> bool:
+    """
+    Copy a single file, handling existing files.
+
+    Args:
+        source: The source file to copy
+        target: The destination path
+        force: If True, overwrite existing
+        verbose: If True, print messages
+
+    Returns:
+        True if file was copied successfully
+    """
+    try:
+        # Check if target already exists
+        if target.exists():
+            if not force:
+                if verbose:
+                    print(f"  ⚠️  {target} exists (use --force to overwrite)")
+                return False
+            target.unlink()
+
+        # Copy the file
+        shutil.copy2(source, target)
+
+        if verbose:
+            print(f"  📋 {target} (copied from {source})")
+
+        return True
+
+    except (OSError, shutil.Error) as e:
+        if verbose:
+            print(f"  ❌ Error copying {source} to {target}: {e}")
+        return False
+
+
+def _copy_directory(source: Path, target: Path, force: bool, verbose: bool) -> bool:
+    """
+    Copy an entire directory, handling existing directories.
+
+    Args:
+        source: The source directory to copy
+        target: The destination path
+        force: If True, overwrite existing
+        verbose: If True, print messages
+
+    Returns:
+        True if directory was copied successfully
+    """
+    try:
+        # Check if target already exists
+        if target.exists():
+            if not force:
+                if verbose:
+                    print(f"  ⚠️  {target} exists (use --force to overwrite)")
+                return False
+            if target.is_dir():
+                shutil.rmtree(target)
+            else:
+                target.unlink()
+
+        # Copy the directory
+        shutil.copytree(source, target)
+
+        if verbose:
+            print(f"  📋 {target}/ (copied from {source}/)")
+
+        return True
+
+    except (OSError, shutil.Error) as e:
+        if verbose:
+            print(f"  ❌ Error copying {source} to {target}: {e}")
+        return False
+
+
 def ensure_central_installation(force_update: bool = False) -> bool:
     """
     Ensure the central ~/.project-specify directory exists with current commands.
-    
+
     This copies the bundled agent commands from the installed package to
     the user's home directory, where projects will symlink to.
-    
+
     Args:
         force_update: If True, overwrite existing installation
-        
+
     Returns:
         True if installation was created/updated, False if already current
     """
     current_version = get_package_version()
-    
+
     # Check if update is needed
     if CENTRAL_DIR.exists() and not force_update:
         if VERSION_FILE.exists():
             installed_version = VERSION_FILE.read_text().strip()
             if installed_version == current_version:
                 return False  # Already up to date
-    
+
     # Create directory structure
     CENTRAL_DIR.mkdir(parents=True, exist_ok=True)
     AGENTS_DIR.mkdir(exist_ok=True)
-    
+
     # Copy agent commands from package resources
     # The agents/ directory should be included in the package
     try:
@@ -204,10 +369,10 @@ def ensure_central_installation(force_update: bool = False) -> bool:
                 (AGENTS_DIR / config["source"]).mkdir(parents=True, exist_ok=True)
             except Exception:
                 pass
-    
+
     # Write version file
     VERSION_FILE.write_text(current_version)
-    
+
     return True
 
 
@@ -216,21 +381,27 @@ def create_agent_symlinks(
     agents: list[str],
     force: bool = False,
     verbose: bool = True,
+    use_copy: bool = False,
 ) -> dict[str, bool]:
     """
-    Create symlinks from project directory to central installation.
-    
+    Create symlinks (or copies) from project directory to central installation.
+
     Args:
         project_dir: The project directory to set up
         agents: List of agent names to create symlinks for
         force: If True, overwrite existing files/symlinks
         verbose: If True, print status messages
-        
+        use_copy: If True, copy files instead of creating symlinks
+
     Returns:
         Dict mapping agent name to success status
     """
+    # If use_copy is requested, use copy implementation
+    if use_copy:
+        return _copy_agent_commands(project_dir, agents, force, verbose)
+
     results = {}
-    
+
     for agent in agents:
         try:
             config = _get_agent_symlink_config(agent)
@@ -239,16 +410,16 @@ def create_agent_symlinks(
                 print(f"  ⚠️  Unknown agent: {agent}")
             results[agent] = False
             continue
-            
+
         source = AGENTS_DIR / config["source"]
         target = project_dir / config["target"]
-        
+
         if not source.exists():
             if verbose:
                 print(f"  ⚠️  Source not found for {agent}: {source}")
             results[agent] = False
             continue
-        
+
         # Handle file-specific symlinks vs directory symlinks
         if "files" in config:
             # Symlink specific files
@@ -269,7 +440,7 @@ def create_agent_symlinks(
             # Symlink entire directory
             target.parent.mkdir(parents=True, exist_ok=True)
             results[agent] = _create_symlink(source, target, force, verbose)
-    
+
     return results
 
 
@@ -335,12 +506,12 @@ def _create_symlink(source: Path, target: Path, force: bool, verbose: bool) -> b
 def _create_windows_symlink(source: Path, target: Path, verbose: bool) -> bool:
     """
     Create symlink on Windows, handling potential permission issues.
-    
+
     Windows symlinks require either:
-    1. Administrator privileges
-    2. Developer Mode enabled
+    1. Developer Mode enabled (recommended)
+    2. Administrator privileges
     3. SeCreateSymbolicLinkPrivilege
-    
+
     Falls back to junction points for directories if symlinks fail.
     """
     try:
@@ -349,7 +520,7 @@ def _create_windows_symlink(source: Path, target: Path, verbose: bool) -> bool:
         return True
     except OSError:
         pass
-    
+
     # For directories, try junction point as fallback
     if source.is_dir():
         try:
@@ -360,13 +531,28 @@ def _create_windows_symlink(source: Path, target: Path, verbose: bool) -> bool:
                 capture_output=True,
             )
             if verbose:
-                print(f"  ℹ️  Created junction point (symlinks require admin on Windows)")
+                print(f"  ℹ️  Created junction point (Windows requires Developer Mode for symlinks)")
             return True
         except subprocess.CalledProcessError:
             pass
-    
+
     if verbose:
-        print(f"  ❌ Windows symlink failed. Try running as Administrator or enable Developer Mode.")
+        print(f"  ❌ Windows symlink failed.")
+        print(f"")
+        print(f"  To fix this, choose one of the following options:")
+        print(f"")
+        print(f"  Option 1 (Recommended): Enable Developer Mode")
+        print(f"    1. Open Settings → Privacy & Security → For developers")
+        print(f"    2. Enable 'Developer Mode'")
+        print(f"    3. Restart this command")
+        print(f"")
+        print(f"  Option 2: Use --copy flag (file copies instead of symlinks)")
+        print(f"    project-specify init . --ai claude --copy")
+        print(f"    Note: Copies use more disk space and won't auto-update")
+        print(f"")
+        print(f"  Option 3: Run as Administrator (not recommended for daily use)")
+        print(f"    Right-click Terminal → Run as Administrator")
+        print(f"")
     return False
 
 

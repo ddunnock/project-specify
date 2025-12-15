@@ -85,6 +85,235 @@ To test your templates, commands, and other changes locally, follow these steps:
 
    Navigate to your test project folder and open the agent to verify your implementation.
 
+## Testing and Code Quality
+
+### Running Tests Locally
+
+Project-specify uses pytest for testing. To run the test suite:
+
+```bash
+# Install development dependencies
+uv sync
+
+# Run all tests
+pytest -v
+
+# Run tests with coverage
+pytest -v --cov=specify_cli --cov-report=term
+
+# Run specific test file
+pytest tests/test_symlink_manager.py -v
+
+# Run tests matching a pattern
+pytest -k "test_symlink" -v
+```
+
+**Before submitting a PR:**
+1. All tests must pass
+2. New features must include tests
+3. Bug fixes should include regression tests
+
+### Code Style Requirements
+
+We enforce code quality with automated tools:
+
+**Linting (ruff):**
+```bash
+# Check for linting issues
+ruff check src/ tests/
+
+# Auto-fix issues where possible
+ruff check --fix src/ tests/
+```
+
+**Code Formatting (black):**
+```bash
+# Check formatting
+black --check src/ tests/
+
+# Auto-format code
+black src/ tests/
+```
+
+**Type Checking (mypy):**
+```bash
+# Run type checker
+mypy src/specify_cli --install-types --non-interactive --ignore-missing-imports
+```
+
+**Run all checks:**
+```bash
+# Lint, format, and type-check
+ruff check src/ tests/ && black --check src/ tests/ && mypy src/specify_cli
+```
+
+### CI/CD Pipeline
+
+All pull requests run through automated checks:
+- **Tests**: Ubuntu, macOS, Windows with Python 3.11 and 3.12
+- **Linting**: ruff, black, mypy
+- **Coverage**: Codecov integration
+
+View workflow files:
+- `.github/workflows/test.yml`
+- `.github/workflows/lint.yml`
+- `.github/workflows/release.yml`
+
+## Extending Project-Specify
+
+### Adding Support for New AI Agents
+
+To add support for a new AI agent:
+
+1. **Update `AGENT_CONFIG` in `src/specify_cli/config.py`:**
+
+   ```python
+   AGENT_CONFIG = {
+       # ... existing agents ...
+       "my-new-agent": {
+           "folder": ".my-agent/",
+           "name": "My New Agent",
+           "script_type": "sh",  # or "ps" for PowerShell
+       },
+   }
+   ```
+
+2. **Create agent command structure in `src/specify_cli/agents/`:**
+
+   ```
+   src/specify_cli/agents/
+   └── my-new-agent/
+       └── commands/
+           ├── spec.sh
+           ├── plan.sh
+           ├── tasks.sh
+           └── implement.sh
+   ```
+
+3. **Update `_get_agent_symlink_config()` in `src/specify_cli/symlink_manager.py`** if special handling is needed:
+
+   ```python
+   def _get_agent_symlink_config(agent_key: str) -> dict:
+       # ... existing code ...
+
+       # Special case for my-new-agent
+       if agent_key == "my-new-agent":
+           return {
+               "source": "my-new-agent/commands",
+               "target": ".my-agent/commands",
+           }
+   ```
+
+4. **Add tests in `tests/test_symlink_manager.py`:**
+
+   ```python
+   def test_create_symlinks_for_my_new_agent(temp_project, mock_central_install):
+       """Test symlink creation for My New Agent."""
+       # ... test implementation
+   ```
+
+5. **Update documentation:**
+   - Add to supported agents table in `README.md`
+   - Mention in relevant documentation
+
+### Adding Support for New Monorepo Types
+
+To add support for a new monorepo configuration:
+
+1. **Add detection logic in `src/specify_cli/monorepo.py`:**
+
+   ```python
+   def detect_my_monorepo(project_dir: Path) -> Optional[MonorepoInfo]:
+       """Detect My Monorepo Tool workspace."""
+       config_file = project_dir / "my-workspace.config"
+
+       if not config_file.exists():
+           return None
+
+       # Parse config and return workspace info
+       packages = _parse_my_monorepo_config(config_file)
+
+       return MonorepoInfo(
+           type="my-monorepo",
+           root=project_dir,
+           packages=packages,
+           config_file=config_file,
+       )
+   ```
+
+2. **Update `detect_monorepo()` function:**
+
+   ```python
+   def detect_monorepo(project_dir: Path) -> Optional[MonorepoInfo]:
+       """Detect monorepo type and return workspace information."""
+       detectors = [
+           # ... existing detectors ...
+           detect_my_monorepo,
+       ]
+
+       for detector in detectors:
+           result = detector(project_dir)
+           if result:
+               return result
+
+       return None
+   ```
+
+3. **Add helper parsing function:**
+
+   ```python
+   def _parse_my_monorepo_config(config_file: Path) -> list[Path]:
+       """Parse My Monorepo workspace configuration."""
+       try:
+           with open(config_file, "r") as f:
+               data = json.load(f)
+
+           workspace_patterns = data.get("workspaces", [])
+           return _expand_glob_patterns(config_file.parent, workspace_patterns)
+
+       except Exception as e:
+           raise MonorepoError(
+               f"Failed to parse {config_file}: {e}"
+           ) from e
+   ```
+
+4. **Add tests in `tests/test_monorepo.py`:**
+
+   ```python
+   def test_detect_my_monorepo(temp_project):
+       """Test My Monorepo detection."""
+       # Create config file
+       config = temp_project / "my-workspace.config"
+       config.write_text(json.dumps({
+           "workspaces": ["packages/*"]
+       }))
+
+       # Create workspace
+       (temp_project / "packages" / "app1").mkdir(parents=True)
+
+       # Test detection
+       result = detect_monorepo(temp_project)
+
+       assert result is not None
+       assert result.type == "my-monorepo"
+       assert len(result.packages) == 1
+   ```
+
+5. **Update documentation:**
+   - Add to supported monorepo types in `README.md`
+   - Add example in `docs/monorepo-guide.md`
+
+### Code Organization
+
+- **`src/specify_cli/__init__.py`** - Main CLI entry point and Typer app
+- **`src/specify_cli/config.py`** - Configuration constants and agent definitions
+- **`src/specify_cli/symlink_manager.py`** - Symlink/copy creation and management
+- **`src/specify_cli/monorepo.py`** - Monorepo detection and handling
+- **`src/specify_cli/mcp_discovery.py`** - MCP server discovery
+- **`src/specify_cli/commands/`** - CLI command implementations
+- **`src/specify_cli/errors.py`** - Custom exception hierarchy
+- **`tests/`** - Test suite (174+ tests)
+
 ## AI contributions in Spec Kit
 
 > [!IMPORTANT]

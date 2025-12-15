@@ -1,0 +1,13 @@
+{
+  "version": "2.0.0",
+  "npmClient": "pnpm",
+  "packages": [
+    "packages/*"
+  ],
+  "useWorkspaces": true,
+  "command": {
+    "publish": {
+      "message": "chore: release"
+    }
+  }
+}

@@ -1,0 +1,15 @@
+[workspace]
+members = [
+    "crates/*",
+    "examples/*",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+authors = ["Test Author <test@example.com>"]
+license = "MIT"
+
+[workspace.dependencies]
+serde = { version = "1.0", features = ["derive"] }
+tokio = { version = "1.0", features = ["full"] }

@@ -14,6 +14,8 @@ from dataclasses import dataclass, field, asdict
 from pathlib import Path
 from typing import Optional
 
+from .errors import MCPDiscoveryError
+
 
 @dataclass
 class MCPServer:
@@ -113,8 +115,10 @@ def discover_mcp_servers(project_dir: Optional[Path] = None) -> list[MCPServer]:
         if path.exists():
             try:
                 servers.extend(_parse_mcp_config(path, source))
-            except Exception:
-                pass
+            except Exception as e:
+                # Log but don't fail - a single corrupted config shouldn't break discovery
+                import logging
+                logging.debug(f"Failed to parse MCP config from {source}: {e}")
     
     # Check for project-local MCP config
     local_configs = [
@@ -127,22 +131,41 @@ def discover_mcp_servers(project_dir: Optional[Path] = None) -> list[MCPServer]:
         if config_path.exists():
             try:
                 servers.extend(_parse_mcp_config(config_path, "project"))
-            except Exception:
-                pass
+            except Exception as e:
+                # Project-local config errors should be visible
+                import logging
+                logging.warning(f"Failed to parse project MCP config at {config_path}: {e}")
     
     # Deduplicate by name, preferring project > claude_code > claude_desktop > others
     return _deduplicate_servers(servers)
 
 
 def _parse_mcp_config(path: Path, source: str) -> list[MCPServer]:
-    """Parse an MCP configuration file."""
+    """Parse an MCP configuration file.
+
+    Args:
+        path: Path to MCP configuration file.
+        source: Source identifier (e.g., "claude_desktop", "project").
+
+    Returns:
+        List of discovered MCP servers.
+
+    Raises:
+        MCPDiscoveryError: If the config file is malformed.
+    """
     servers = []
-    
+
     try:
         with open(path, "r", encoding="utf-8") as f:
             data = json.load(f)
-    except (json.JSONDecodeError, Exception):
-        return servers
+    except json.JSONDecodeError as e:
+        raise MCPDiscoveryError(
+            f"Invalid JSON in {source} MCP config at {path}: {e}"
+        ) from e
+    except Exception as e:
+        raise MCPDiscoveryError(
+            f"Failed to read {source} MCP config at {path}: {e}"
+        ) from e
     
     # Handle different config formats
     mcp_servers = data.get("mcpServers") or data.get("servers") or {}
@@ -220,13 +243,14 @@ def detect_project_technology(project_dir: Path) -> ProjectTechnology:
                     framework = "vue"
                 elif "express" in deps:
                     framework = "express"
-        except Exception:
+        except (json.JSONDecodeError, FileNotFoundError, KeyError):
+            # Silently skip framework detection if package.json is invalid
             pass
     elif (project_dir / "Cargo.toml").exists():
         primary_language = "rust"
     elif (project_dir / "go.mod").exists():
         primary_language = "go"
-    elif (project_dir / "pyproject.toml").exists() or (project_dir / "requirements.txt").exists():
+    elif (project_dir / "pyproject.toml").exists() or (project_dir / "requirements.txt").exists() or (project_dir / "Pipfile").exists():
         primary_language = "python"
         package_manager = "pip"
         if (project_dir / "Pipfile").exists():
@@ -244,7 +268,8 @@ def detect_project_technology(project_dir: Path) -> ProjectTechnology:
                     framework = "flask"
                 elif "fastapi" in content.lower():
                     framework = "fastapi"
-        except Exception:
+        except (FileNotFoundError, UnicodeDecodeError):
+            # Silently skip framework detection if file is unreadable
             pass
     elif (project_dir / "pom.xml").exists() or (project_dir / "build.gradle").exists():
         primary_language = "java"
@@ -271,7 +296,8 @@ def detect_project_technology(project_dir: Path) -> ProjectTechnology:
                             database = "mongodb"
                         elif "redis" in image.lower():
                             detected_services.append("redis")
-        except Exception:
+        except (ImportError, FileNotFoundError, yaml.YAMLError):
+            # Silently skip docker-compose detection if yaml unavailable or file invalid
             pass
     
     # Detect services
@@ -328,4 +354,80 @@ def generate_mcp_context(project_dir: Path, servers: list[MCPServer], tech: Proj
     
     with open(json_file, "w", encoding="utf-8") as f:
         json.dump(context_data, f, indent=2)
+
+
+def get_available_mcp_operations(project_dir: Optional[Path] = None) -> dict[str, list[str]]:
+    """
+    Return only operations available with current MCP configuration.
+
+    This function discovers installed MCP servers and maps them to available
+    operations that AI assistants can use. Useful for validating that certain
+    operations are possible before suggesting them to users.
+
+    Args:
+        project_dir: Project directory to scan (defaults to current directory)
+
+    Returns:
+        Dictionary mapping operation categories to available operations.
+        Example: {"database": ["query", "describe_table"], "git": ["status", "diff"]}
+    """
+    if project_dir is None:
+        project_dir = Path.cwd()
+
+    servers = discover_mcp_servers(project_dir)
+    server_names = {s.name.lower() for s in servers}
+
+    operations = {}
+
+    # Database operations
+    if "postgres" in server_names or "postgresql" in server_names or "sqlite" in server_names:
+        operations["database"] = [
+            "query",
+            "describe_table",
+            "analyze_schema",
+            "list_tables",
+            "execute_sql"
+        ]
+
+    # Git operations
+    if "git" in server_names:
+        operations["git"] = [
+            "status",
+            "diff",
+            "log",
+            "blame",
+            "show",
+            "commit"
+        ]
+
+    # GitHub operations
+    if "github" in server_names:
+        operations["github"] = [
+            "create_issue",
+            "create_pr",
+            "search_code",
+            "list_issues",
+            "comment_on_pr"
+        ]
+
+    # Filesystem operations
+    if "filesystem" in server_names:
+        operations["filesystem"] = [
+            "read",
+            "write",
+            "search",
+            "list",
+            "delete"
+        ]
+
+    # HTTP/Fetch operations
+    if "fetch" in server_names or "http" in server_names:
+        operations["http"] = [
+            "get",
+            "post",
+            "put",
+            "delete"
+        ]
+
+    return operations
 

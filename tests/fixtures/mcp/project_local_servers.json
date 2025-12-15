@@ -1,0 +1,20 @@
+{
+  "mcpServers": {
+    "custom-tool": {
+      "command": "node",
+      "args": [
+        "./mcp-servers/custom-tool/index.js"
+      ]
+    },
+    "project-db": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "@modelcontextprotocol/server-postgres"
+      ],
+      "env": {
+        "POSTGRES_CONNECTION_STRING": "postgresql://localhost:5432/projectdb"
+      }
+    }
+  }
+}

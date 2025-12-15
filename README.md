@@ -15,6 +15,15 @@
     <a href="https://github.github.io/spec-kit/"><img src="https://img.shields.io/badge/docs-GitHub_Pages-blue" alt="Documentation"/></a>
 </p>
 
+<p align="center">
+    <em>Project-Specify CI/CD:</em><br/>
+    <a href="../../actions/workflows/test.yml"><img src="../../actions/workflows/test.yml/badge.svg" alt="Tests"/></a>
+    <a href="../../actions/workflows/lint.yml"><img src="../../actions/workflows/lint.yml/badge.svg" alt="Lint"/></a>
+    <a href="https://codecov.io/gh/ddunnock/project-specify"><img src="https://codecov.io/gh/ddunnock/project-specify/branch/main/graph/badge.svg" alt="Coverage"/></a>
+    <img src="https://img.shields.io/badge/python-3.11%20%7C%203.12-blue" alt="Python 3.11 | 3.12"/>
+    <img src="https://img.shields.io/badge/tests-174%20passing-success" alt="174 tests passing"/>
+</p>
+
 ---
 
 ## Table of Contents
@@ -89,6 +98,25 @@ uvx --from git+https://github.com/github/spec-kit.git specify init <PROJECT_NAME
 - No need to create shell aliases
 - Better tool management with `uv tool list`, `uv tool upgrade`, `uv tool uninstall`
 - Cleaner shell configuration
+
+#### Windows Users: Symlink Support
+
+Project-specify uses symlinks to efficiently share commands across projects. On Windows, you have three options:
+
+**Option 1: Enable Developer Mode** (Recommended)
+```
+Settings → Privacy & Security → For developers → Enable Developer Mode
+```
+
+**Option 2: Use --copy flag**
+```bash
+specify init my-project --ai claude --copy
+```
+Copies files instead of creating symlinks (uses more disk space, but works anywhere).
+
+**Option 3: Run as Administrator** (Not recommended for daily use)
+
+For detailed Windows setup instructions, see [docs/windows-setup.md](./docs/windows-setup.md).
 
 ### 2. Establish project principles
 
@@ -273,6 +301,56 @@ Additional commands for enhanced quality and validation:
 | Variable          | Description                                                                                                                                                                                                                                                                                            |
 | ----------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | `SPECIFY_FEATURE` | Override feature detection for non-Git repositories. Set to the feature directory name (e.g., `001-photo-albums`) to work on a specific feature when not using Git branches.<br/>\*\*Must be set in the context of the agent you're working with prior to using `/speckit.plan` or follow-up commands. |
+
+###  Monorepo Support
+
+Project-specify automatically detects and supports common monorepo configurations:
+
+- **pnpm workspaces** (`pnpm-workspace.yaml`)
+- **npm workspaces** (`package.json` with `workspaces` field)
+- **Yarn workspaces** (`package.json` with `workspaces` field)
+- **Lerna** (`lerna.json`)
+- **Nx** (`nx.json`)
+- **Turborepo** (`turbo.json`)
+- **Cargo workspaces** (`Cargo.toml` with `[workspace]`)
+
+**Workspace-specific initialization:**
+
+```bash
+# Initialize in a specific workspace package
+specify init . --workspace packages/my-app --ai claude
+
+# Or navigate to the workspace directory
+cd packages/my-app
+specify init . --ai claude
+```
+
+For detailed monorepo usage patterns, see [docs/monorepo-guide.md](./docs/monorepo-guide.md).
+
+### MCP (Model Context Protocol) Integration
+
+Project-specify can discover and integrate with installed MCP servers to provide enhanced AI capabilities:
+
+**Automatic MCP discovery:**
+- Claude Desktop (`~/Library/Application Support/Claude/claude_desktop_config.json`)
+- Claude Code (`~/.claude/config.json`)
+- Cursor (`.cursorrules` and Cursor settings)
+- Project-local MCP servers (`.mcp/servers.json`)
+
+**Technology-based MCP suggestions:**
+Project-specify analyzes your project and suggests relevant MCP servers:
+- **Python projects** → filesystem, github, postgres MCP servers
+- **Node.js projects** → filesystem, github, npm registry MCP servers
+- **Rust projects** → filesystem, github, cargo registry MCP servers
+- **Database projects** → postgres, sqlite, mysql MCP servers
+
+**Disable MCP discovery:**
+
+```bash
+specify init my-project --ai claude --no-mcp-discovery
+```
+
+For detailed MCP setup and configuration, see [docs/mcp-setup.md](./docs/mcp-setup.md).
 
 ## 📚 Core Philosophy
 
@@ -619,6 +697,15 @@ Once the implementation is complete, test the application and resolve any runtim
 
 ## 🔍 Troubleshooting
 
+### Windows Symlink Issues
+
+**Symptom:** `Access is denied` or `A required privilege is not held by the client`
+
+**Solutions:**
+1. Enable Developer Mode: Settings → Privacy & Security → For developers → Enable Developer Mode
+2. Use `--copy` flag: `specify init my-project --ai claude --copy`
+3. See [docs/windows-setup.md](./docs/windows-setup.md) for detailed troubleshooting
+
 ### Git Credential Manager on Linux
 
 If you're having issues with Git authentication on Linux, you can install Git Credential Manager:
@@ -635,6 +722,46 @@ git config --global credential.helper manager
 echo "Cleaning up..."
 rm gcm-linux_amd64.2.6.1.deb
 ```
+
+### MCP Discovery Issues
+
+**Symptom:** MCP servers not detected or incorrect servers suggested
+
+**Solutions:**
+1. Verify MCP config files exist in standard locations
+2. Use `--no-mcp-discovery` to skip MCP integration
+3. Manually configure `.mcp/servers.json` in your project
+4. See [docs/mcp-setup.md](./docs/mcp-setup.md) for configuration help
+
+### Monorepo Detection Issues
+
+**Symptom:** Workspace not detected or initialization in wrong location
+
+**Solutions:**
+1. Verify workspace configuration files (e.g., `pnpm-workspace.yaml`, `package.json`)
+2. Use `--workspace` flag to specify the package explicitly
+3. Navigate directly to the workspace directory before running `specify init`
+4. See [docs/monorepo-guide.md](./docs/monorepo-guide.md) for detailed examples
+
+### Network/GitHub API Issues
+
+**Symptom:** Rate limit exceeded or connection failures
+
+**Solutions:**
+1. Set GitHub token: `specify init my-project --github-token your_token`
+2. Or set environment variable: `export GITHUB_TOKEN=your_token`
+3. Use `--skip-tls` for SSL/TLS issues (not recommended for production)
+4. Check your network connection and proxy settings
+
+### Debug Mode
+
+For detailed diagnostic output, use the `--debug` flag:
+
+```bash
+specify init my-project --ai claude --debug
+```
+
+This will show verbose output for network requests, file operations, and error details.
 
 ## 👥 Maintainers
 
